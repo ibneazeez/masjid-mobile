@@ -281,6 +281,38 @@ class _MasjidDetailScreenState extends State<MasjidDetailScreen> {
     }
   }
 
+  Widget _freshnessFooter() {
+    final status = _m.verificationStatus;
+    String msg;
+    if (status == 'never') {
+      msg = '⚠️ These timings have not been verified by any admin yet — use as guidance only.';
+    } else {
+      // Format date nicely from ISO-ish string
+      String date = '';
+      if (_m.verifiedAt != null && _m.verifiedAt!.length >= 10) {
+        date = _m.verifiedAt!.substring(0, 10); // YYYY-MM-DD
+      }
+      final days = _m.verifiedDaysAgo ?? 0;
+      msg = '⚠️ These timings were last verified $days days ago'
+            '${date.isNotEmpty ? " (on $date)" : ""} and may be outdated.';
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.textLo.withOpacity(0.4), style: BorderStyle.solid),
+        ),
+        child: Text(msg,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: AppTheme.textMid, fontSize: 11.5, height: 1.4)),
+      ),
+    );
+  }
+
   Widget _verificationBanner() {
     final status = _m.verificationStatus;
     final days = _m.verifiedDaysAgo;
@@ -567,6 +599,10 @@ class _MasjidDetailScreenState extends State<MasjidDetailScreen> {
                   }),
                 ),
           ),
+
+          // Small bottom notice — for any masjid that's not 'fresh'
+          if (_m.verificationStatus != 'fresh')
+            _freshnessFooter(),
 
           const SizedBox(height: 22),
           SizedBox(

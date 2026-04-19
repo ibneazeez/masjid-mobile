@@ -61,13 +61,17 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
 
   void _onSearchChanged(String v) {
     _searchDebounce?.cancel();
-    if (v.length >= 3 || v.isEmpty) {
-      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-        if (!mounted) return;
-        _query = v;
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      // Only apply filter for 3+ chars; shorter input is treated as no filter.
+      // This ensures the list always updates consistently as the user types or
+      // deletes, instead of getting stuck with a stale query.
+      final newQuery = v.length >= 3 ? v : '';
+      if (newQuery != _query) {
+        _query = newQuery;
         _loadFirstPage();
-      });
-    }
+      }
+    });
   }
 
   Future<void> _handleBackPress() async {
@@ -224,7 +228,7 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
               child: Image.asset('assets/logo/logo_1024.png', width: 30, height: 30),
             ),
             const SizedBox(width: 10),
-            const Text('Masjids of Nellore'),
+            const Text('Masjid Timings'),
           ],
         ),
         actions: [
@@ -329,9 +333,25 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
     );
   }
 
-  int _heroOffset() => _items.isNotEmpty ? 3 : 0;
+  /// True when GPS is on AND closest masjid is > 50 km away.
+  /// Interpreted as: user is outside the Nellore coverage area.
+  bool get _isOutOfCoverage {
+    if (!_locationOn || _items.isEmpty) return false;
+    final d = _items.first.distanceKm;
+    return d != null && d > 50.0;
+  }
+
+  int _heroOffset() {
+    if (_items.isEmpty) return 0;
+    // Hero + search + section header (+ coverage banner on top if relevant)
+    return _isOutOfCoverage ? 4 : 3;
+  }
 
   Widget _buildHeader(int i) {
+    if (_isOutOfCoverage) {
+      if (i == 0) return _coverageBanner();
+      i = i - 1; // shift the rest
+    }
     if (i == 0) {
       return Column(children: [
         HeroPrayerCard(masjid: _items.first, now: _now),
@@ -381,6 +401,42 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         Text(_locationOn ? 'GPS' : 'no GPS',
           style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 10)),
       ]),
+    );
+  }
+
+  Widget _coverageBanner() {
+    final km = _items.first.distanceKm!.toStringAsFixed(0);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: const Color(0x33D4AF37),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.gold.withOpacity(0.55)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.info_outline, color: AppTheme.gold, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Outside coverage area',
+                  style: GoogleFonts.inter(
+                    color: AppTheme.gold, fontSize: 13,
+                    fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+                const SizedBox(height: 2),
+                Text(
+                  'This app currently covers only Nellore masjids. '
+                  'Your location is about $km km away from the nearest listed masjid.',
+                  style: GoogleFonts.inter(
+                    color: AppTheme.gold.withOpacity(0.90), fontSize: 11.5)),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
   }
 

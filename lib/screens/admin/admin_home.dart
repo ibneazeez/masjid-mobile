@@ -41,6 +41,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Verification alert banner (top of screen)
+            if (_stats != null) _verifyAlert(_stats!),
+
             // Stats grid
             if (_stats != null) _statsGrid(_stats!)
             else if (_err != null) Center(child: Padding(
@@ -88,6 +91,59 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 MaterialPageRoute(builder: (_) => const AdminSuggestionsScreen())),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _verifyAlert(Map<String, dynamic> s) {
+    final never = (s['never_verified'] ?? 0) as int;
+    final stale = (s['stale'] ?? 0) as int;
+    final alarm = (s['alarm'] ?? 0) as int;
+    if (never == 0 && stale == 0 && alarm == 0) return const SizedBox.shrink();
+
+    final isAlarm = alarm > 0 || never > 0;
+    final color = isAlarm ? const Color(0xFFDC2626) : AppTheme.gold;
+    final bg = isAlarm ? const Color(0x33DC2626) : const Color(0x33D4AF37);
+
+    final parts = <String>[];
+    if (never > 0) parts.add('$never never verified');
+    if (alarm > 0) parts.add('$alarm not verified in 2+ weeks');
+    if (stale > 0) parts.add('$stale due for check');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const AdminMasjidsScreen())),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.6)),
+          ),
+          child: Row(children: [
+            Icon(isAlarm ? Icons.error_outline : Icons.warning_amber_rounded,
+              color: color, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Masjids need verification',
+                    style: GoogleFonts.inter(
+                      color: color, fontSize: 13.5, fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+                  const SizedBox(height: 2),
+                  Text(parts.join(' · '),
+                    style: GoogleFonts.inter(
+                      color: color.withOpacity(0.9), fontSize: 11.5)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: color),
+          ]),
         ),
       ),
     );

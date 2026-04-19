@@ -30,12 +30,13 @@ class Masjid {
   final bool isFavourite;
   final int? verifiedDaysAgo;          // null if never verified
   final String verificationStatus;     // 'fresh' | 'stale' | 'alarm' | 'never'
+  final String? verifiedAt;            // ISO-ish string from backend
   final List<Timing> timings;
   Masjid({
     required this.id, required this.name, required this.area,
     this.address, this.phone, this.lat, this.lng, this.distanceKm,
     this.isFavourite = false,
-    this.verifiedDaysAgo, this.verificationStatus = 'never',
+    this.verifiedDaysAgo, this.verificationStatus = 'never', this.verifiedAt,
     this.timings = const [],
   });
   factory Masjid.fromJson(Map<String, dynamic> j) => Masjid(
@@ -50,6 +51,7 @@ class Masjid {
     isFavourite: j['is_favourite'] == true,
     verifiedDaysAgo: (j['verified_days_ago'] as num?)?.toInt(),
     verificationStatus: (j['verification_status'] ?? 'never').toString(),
+    verifiedAt: j['verified_at']?.toString(),
     timings: ((j['timings'] as List?) ?? []).map((e) => Timing.fromJson(e)).toList(),
   );
 
@@ -59,15 +61,18 @@ class Masjid {
     'is_favourite': isFavourite,
     'verified_days_ago': verifiedDaysAgo,
     'verification_status': verificationStatus,
+    'verified_at': verifiedAt,
     'timings': timings.map((t) => t.toJson()).toList(),
   };
 
-  Masjid copyWith({bool? isFavourite, int? verifiedDaysAgo, String? verificationStatus}) => Masjid(
+  Masjid copyWith({bool? isFavourite, int? verifiedDaysAgo,
+                    String? verificationStatus, String? verifiedAt}) => Masjid(
     id: id, name: name, area: area, address: address, phone: phone,
     lat: lat, lng: lng, distanceKm: distanceKm,
     isFavourite: isFavourite ?? this.isFavourite,
     verifiedDaysAgo: verifiedDaysAgo ?? this.verifiedDaysAgo,
     verificationStatus: verificationStatus ?? this.verificationStatus,
+    verifiedAt: verifiedAt ?? this.verifiedAt,
     timings: timings,
   );
 
@@ -313,6 +318,20 @@ class Api {
     final r = await http.get(uri, headers: await _headers(auth: true));
     if (r.statusCode != 200) throw Exception('users failed: ${r.body}');
     return List<Map<String, dynamic>>.from(jsonDecode(r.body)['items']);
+  }
+
+  // ----- ADMIN: root super admin — promote/demote -----
+  static Future<void> adminSetSuperAdmin(int userId, bool makeSuper) async {
+    final r = await http.post(
+      Uri.parse('$base/api/admin/users/$userId/super-admin'),
+      headers: await _headers(auth: true),
+      body: jsonEncode({'is_super_admin': makeSuper}),
+    );
+    if (r.statusCode != 200) {
+      String msg = 'toggle failed';
+      try { msg = jsonDecode(r.body)['error'] ?? msg; } catch (_) {}
+      throw Exception(msg);
+    }
   }
 
   // ----- ADMIN: role assignments -----

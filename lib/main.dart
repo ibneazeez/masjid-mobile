@@ -9,7 +9,7 @@ class MasjidApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Masjids of Nellore',
+      title: 'Masjid Timings',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(),
       home: const MasjidListScreen(),

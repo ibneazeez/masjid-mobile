@@ -11,15 +11,63 @@ class AdminUsersScreen extends StatefulWidget {
 }
 
 class _AdminUsersScreenState extends State<AdminUsersScreen> {
+  static const _rootSuperAdminEmail = 'mdaneesahmed@gmail.com';
+
   List<Map<String, dynamic>> _users = [];
   bool _loading = true;
+  bool _amRoot = false;      // true if current user is the root super admin
   String _query = '';
   Timer? _debounce;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _loadMe();
+    _load();
+  }
   @override
   void dispose() { _debounce?.cancel(); super.dispose(); }
+
+  Future<void> _loadMe() async {
+    final me = await Api.me();
+    if (!mounted) return;
+    final email = (me?['email'] ?? '').toString().toLowerCase();
+    setState(() => _amRoot = email == _rootSuperAdminEmail);
+  }
+
+  Future<void> _toggleSuper(Map<String, dynamic> u) async {
+    final target = !(u['is_super_admin'] == true);
+    final action = target ? 'promote' : 'demote';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: Text('${target ? "Make" : "Remove as"} super admin?'),
+        content: Text('${target ? "Grant" : "Revoke"} super-admin powers for ${u['name']} (${u['email'] ?? u['phone']})?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: target ? AppTheme.gold : Colors.redAccent,
+              foregroundColor: target ? AppTheme.bg : Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(target ? 'Promote' : 'Demote'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await Api.adminSetSuperAdmin(u['id'], target);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$action-d successfully')));
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -140,8 +188,27 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                           ],
                         ),
                       ),
-                      Text('#${u['id']}',
-                        style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 10)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('#${u['id']}',
+                            style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 10)),
+                          if (_amRoot) ...[
+                            const SizedBox(height: 6),
+                            IconButton(
+                              icon: Icon(
+                                isSuper ? Icons.remove_circle_outline : Icons.add_moderator,
+                                color: isSuper ? Colors.redAccent : AppTheme.gold,
+                                size: 20,
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              tooltip: isSuper ? 'Remove super admin' : 'Make super admin',
+                              onPressed: () => _toggleSuper(u),
+                            ),
+                          ],
+                        ],
+                      ),
                     ]),
                   );
                 },
