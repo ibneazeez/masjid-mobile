@@ -26,7 +26,7 @@ class _AdminMasjidsScreenState extends State<AdminMasjidsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final page = await Api.listMasjids(page: 0, size: 200);
+      final page = await Api.listMasjids(page: 0, size: 200, withTimings: true);
       setState(() {
         _all = page.items;
         _filtered = _applyFilter(_query);

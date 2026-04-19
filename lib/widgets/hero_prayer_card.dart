@@ -31,9 +31,12 @@ class HeroPrayerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final next = masjid.nextPrayer(now);
-    final dailyPrayers = masjid.timings
-        .where((t) => t.prayer != 'jumuah')
-        .toList();
+    final isFri = now.weekday == DateTime.friday;
+    // On Friday, Jumu'ah replaces Dhuhr; on other days, hide Jumu'ah.
+    final dailyPrayers = masjid.timings.where((t) {
+      if (isFri) return t.prayer != 'dhuhr';
+      return t.prayer != 'jumuah';
+    }).toList();
 
     return Container(
       decoration: BoxDecoration(
@@ -178,8 +181,8 @@ class HeroPrayerCard extends StatelessWidget {
                 }).toList(),
               ),
             ),
-          // Jumu'ah row — always visible (even when not Friday) so people can plan
-          if (masjid.jumuah != null) ...[
+          // Jumu'ah preview — only on non-Fridays (on Friday it's already in the main row)
+          if (masjid.jumuah != null && !isFri) ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

@@ -1,7 +1,7 @@
 name: masjid_mobile
 description: "Masjids of Nellore — masjid.eesa.co.in"
 publish_to: 'none'
-version: 0.5.0+7
+version: 0.7.0+9
 
 environment:
   sdk: '>=3.4.3 <4.0.0'

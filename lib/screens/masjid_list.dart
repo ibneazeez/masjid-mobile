@@ -396,21 +396,35 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.line),
+            border: Border.all(
+              color: m.verificationStatus == 'alarm'
+                ? const Color(0x77DC2626)
+                : m.verificationStatus == 'stale'
+                  ? const Color(0x77D4AF37)
+                  : AppTheme.line,
+            ),
           ),
           child: Row(children: [
-            Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [AppTheme.emerald, Color(0xFF053B2A)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+            Stack(alignment: Alignment.bottomRight, children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [AppTheme.emerald, Color(0xFF053B2A)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(color: AppTheme.gold.withOpacity(0.55), width: 1.2),
                 ),
-                border: Border.all(color: AppTheme.gold.withOpacity(0.55), width: 1.2),
+                child: const Icon(Icons.mosque, color: AppTheme.goldSoft, size: 22),
               ),
-              child: const Icon(Icons.mosque, color: AppTheme.goldSoft, size: 22),
-            ),
+              if (m.verificationStatus == 'fresh')
+                const _StatusDot(color: Color(0xFF22A06B), icon: Icons.check)
+              else if (m.verificationStatus == 'stale')
+                const _StatusDot(color: Color(0xFFD4AF37), icon: Icons.warning_amber_rounded)
+              else if (m.verificationStatus == 'alarm')
+                const _StatusDot(color: Color(0xFFDC2626), icon: Icons.priority_high),
+            ]),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -473,6 +487,24 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
           ]),
         ),
       ),
+    );
+  }
+}
+
+class _StatusDot extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  const _StatusDot({required this.color, required this.icon});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18, height: 18,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(color: AppTheme.surface, width: 2),
+      ),
+      child: Icon(icon, size: 10, color: Colors.white),
     );
   }
 }

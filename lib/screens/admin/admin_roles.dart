@@ -59,6 +59,22 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
     });
   }
 
+  Future<void> _setStatus(Map<String, dynamic> r, String newStatus) async {
+    try {
+      await Api.adminCreateAssignment(
+        userPhoneOrEmail: (r['user_email'] ?? r['user_phone']).toString(),
+        masjidId: r['masjid_id'],
+        role: r['role'],
+        status: newStatus,
+      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(newStatus == 'active' ? 'Approved' : 'Rejected')));
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   Future<void> _delete(int id, String label) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -147,40 +163,80 @@ class _AdminRolesScreenState extends State<AdminRolesScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppTheme.line),
                     ),
-                    child: Row(children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(r['user_name'] ?? '(unknown)',
-                              style: GoogleFonts.inter(
-                                color: AppTheme.cream, fontWeight: FontWeight.w700, fontSize: 13.5)),
-                            Text(r['user_email'] ?? r['user_phone'] ?? '',
-                              style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
-                            const SizedBox(height: 6),
-                            Wrap(spacing: 6, runSpacing: 4, children: [
-                              _chip(r['masjid_name'] ?? '?', AppTheme.surfaceAlt, AppTheme.cream),
-                              _chip(r['role'] ?? '?',
-                                AppTheme.emerald.withOpacity(0.30), AppTheme.cream,
-                                outline: AppTheme.emerald.withOpacity(0.7)),
-                              _chip(r['status'] ?? '?',
-                                r['status'] == 'active'
-                                  ? AppTheme.gold.withOpacity(0.20)
-                                  : AppTheme.surfaceAlt,
-                                r['status'] == 'active' ? AppTheme.gold : AppTheme.textMid,
-                                outline: r['status'] == 'active'
-                                  ? AppTheme.gold.withOpacity(0.5)
-                                  : AppTheme.line),
-                            ]),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                        onPressed: () => _delete(r['id'],
-                          '${r['user_name']} → ${r['masjid_name']} (${r['role']})'),
-                      ),
-                    ]),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(r['user_name'] ?? '(unknown)',
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.cream, fontWeight: FontWeight.w700, fontSize: 13.5)),
+                                Text(r['user_email'] ?? r['user_phone'] ?? '',
+                                  style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
+                                const SizedBox(height: 6),
+                                Wrap(spacing: 6, runSpacing: 4, children: [
+                                  _chip(r['masjid_name'] ?? '?', AppTheme.surfaceAlt, AppTheme.cream),
+                                  _chip(r['role'] ?? '?',
+                                    AppTheme.emerald.withOpacity(0.30), AppTheme.cream,
+                                    outline: AppTheme.emerald.withOpacity(0.7)),
+                                  _chip(r['status'] ?? '?',
+                                    r['status'] == 'active'
+                                      ? AppTheme.gold.withOpacity(0.20)
+                                      : r['status'] == 'pending'
+                                        ? const Color(0x552563EB)
+                                        : AppTheme.surfaceAlt,
+                                    r['status'] == 'active' ? AppTheme.gold
+                                    : r['status'] == 'pending' ? const Color(0xFF93C5FD)
+                                    : AppTheme.textMid,
+                                    outline: r['status'] == 'active'
+                                      ? AppTheme.gold.withOpacity(0.5)
+                                      : AppTheme.line),
+                                ]),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                            onPressed: () => _delete(r['id'],
+                              '${r['user_name']} → ${r['masjid_name']} (${r['role']})'),
+                          ),
+                        ]),
+                        // Approve / Reject buttons for pending assignments
+                        if (r['status'] == 'pending') ...[
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                label: const Text('Reject', style: TextStyle(color: Colors.redAccent, fontSize: 12.5)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.redAccent),
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  minimumSize: const Size(0, 0),
+                                ),
+                                onPressed: () => _setStatus(r, 'rejected'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.check, size: 16),
+                                label: const Text('Approve', style: TextStyle(fontSize: 12.5)),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppTheme.emerald,
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  minimumSize: const Size(0, 0),
+                                ),
+                                onPressed: () => _setStatus(r, 'active'),
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ],
+                    ),
                   );
                 },
               ),

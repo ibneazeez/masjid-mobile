@@ -28,11 +28,15 @@ class Masjid {
   final double? lng;
   final double? distanceKm;
   final bool isFavourite;
+  final int? verifiedDaysAgo;          // null if never verified
+  final String verificationStatus;     // 'fresh' | 'stale' | 'alarm' | 'never'
   final List<Timing> timings;
   Masjid({
     required this.id, required this.name, required this.area,
     this.address, this.phone, this.lat, this.lng, this.distanceKm,
-    this.isFavourite = false, this.timings = const [],
+    this.isFavourite = false,
+    this.verifiedDaysAgo, this.verificationStatus = 'never',
+    this.timings = const [],
   });
   factory Masjid.fromJson(Map<String, dynamic> j) => Masjid(
     id: j['id'],
@@ -44,6 +48,8 @@ class Masjid {
     lng: (j['lng'] as num?)?.toDouble(),
     distanceKm: (j['distance_km'] as num?)?.toDouble(),
     isFavourite: j['is_favourite'] == true,
+    verifiedDaysAgo: (j['verified_days_ago'] as num?)?.toInt(),
+    verificationStatus: (j['verification_status'] ?? 'never').toString(),
     timings: ((j['timings'] as List?) ?? []).map((e) => Timing.fromJson(e)).toList(),
   );
 
@@ -51,23 +57,30 @@ class Masjid {
     'id': id, 'name': name, 'area': area, 'address': address, 'phone': phone,
     'lat': lat, 'lng': lng, 'distance_km': distanceKm,
     'is_favourite': isFavourite,
+    'verified_days_ago': verifiedDaysAgo,
+    'verification_status': verificationStatus,
     'timings': timings.map((t) => t.toJson()).toList(),
   };
 
-  Masjid copyWith({bool? isFavourite}) => Masjid(
+  Masjid copyWith({bool? isFavourite, int? verifiedDaysAgo, String? verificationStatus}) => Masjid(
     id: id, name: name, area: area, address: address, phone: phone,
     lat: lat, lng: lng, distanceKm: distanceKm,
     isFavourite: isFavourite ?? this.isFavourite,
+    verifiedDaysAgo: verifiedDaysAgo ?? this.verifiedDaysAgo,
+    verificationStatus: verificationStatus ?? this.verificationStatus,
     timings: timings,
   );
 
   /// Returns the next upcoming prayer based on `now` (jamaat_time > now).
   /// Falls back to fajr if Isha is over.
-  /// Skips Jumu'ah unless today is Friday.
+  /// On Friday, Jumu'ah REPLACES Dhuhr in the daily flow.
   Timing? nextPrayer(DateTime now) {
     if (timings.isEmpty) return null;
     final isFri = now.weekday == DateTime.friday;
-    final ordered = timings.where((t) => t.prayer != 'jumuah' || isFri).toList();
+    final ordered = timings.where((t) {
+      if (isFri) return t.prayer != 'dhuhr';   // Jumu'ah replaces Dhuhr on Friday
+      return t.prayer != 'jumuah';              // Hide Jumu'ah on other days
+    }).toList();
     int toMin(String hms) {
       final p = hms.split(':');
       return int.parse(p[0]) * 60 + int.parse(p[1]);
@@ -241,6 +254,32 @@ class Api {
     final r = await http.delete(Uri.parse('$base/api/me/favourites/$masjidId'),
                                 headers: await _headers(auth: true));
     if (r.statusCode != 200) throw Exception('remove favourite failed');
+  }
+
+  // ----- VERIFY TIMINGS -----
+  static Future<void> verifyMasjid(int masjidId) async {
+    final r = await http.post(
+      Uri.parse('$base/api/masjids/$masjidId/verify'),
+      headers: await _headers(auth: true),
+    );
+    if (r.statusCode != 200) {
+      String msg = 'verify failed';
+      try { msg = jsonDecode(r.body)['error'] ?? msg; } catch (_) {}
+      throw Exception(msg);
+    }
+  }
+
+  // ----- MEMBERSHIP -----
+  static Future<void> registerAsMember(int masjidId) async {
+    final r = await http.post(
+      Uri.parse('$base/api/masjids/$masjidId/members'),
+      headers: await _headers(auth: true),
+    );
+    if (r.statusCode != 200) {
+      String msg = 'register failed';
+      try { msg = jsonDecode(r.body)['error'] ?? msg; } catch (_) {}
+      throw Exception(msg);
+    }
   }
 
   // ----- TIME SUGGESTIONS -----

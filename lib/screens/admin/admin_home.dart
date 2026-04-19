@@ -5,6 +5,7 @@ import '../../theme.dart';
 import 'admin_masjids.dart';
 import 'admin_roles.dart';
 import 'admin_suggestions.dart';
+import 'admin_users.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -64,8 +65,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             ),
             const SizedBox(height: 10),
             _menuTile(
-              icon: Icons.group_outlined, title: 'Roles & Users',
-              subtitle: 'Assign masjid admins, imams, committee members',
+              icon: Icons.people_outlined, title: 'Users',
+              subtitle: 'View all registered users, search by name/email',
+              onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const AdminUsersScreen())),
+            ),
+            const SizedBox(height: 10),
+            _menuTile(
+              icon: Icons.assignment_ind_outlined, title: 'Roles & Memberships',
+              subtitle: 'Assign masjid admins, approve member requests',
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AdminRolesScreen())),
             ),
