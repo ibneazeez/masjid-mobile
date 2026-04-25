@@ -3,7 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../api.dart';
 import '../theme.dart';
 import 'admin/admin_home.dart';
+import 'announcements.dart';
 import 'login.dart';
+import 'notification_settings.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -145,6 +147,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 18),
         ],
+
+        // Announcements — available to everyone
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AnnouncementsScreen())),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.line),
+              ),
+              child: Row(children: [
+                const Icon(Icons.campaign_outlined, color: AppTheme.gold),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Announcements',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.cream, fontSize: 14, fontWeight: FontWeight.w700)),
+                    Text('Janaza, Eid prayers, special prayers',
+                      style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.textLo),
+              ]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Notification settings — available to every logged-in user
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const NotificationSettingsScreen())),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.line),
+              ),
+              child: Row(children: [
+                const Icon(Icons.notifications_active_outlined, color: AppTheme.gold),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Prayer notifications',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.cream, fontSize: 14, fontWeight: FontWeight.w700)),
+                    Text('Get reminded before each adhan',
+                      style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.textLo),
+              ]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
 
         Text('MEMBERSHIPS',
           style: GoogleFonts.inter(

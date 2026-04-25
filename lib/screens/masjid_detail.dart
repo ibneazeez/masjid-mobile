@@ -367,15 +367,20 @@ class _MasjidDetailScreenState extends State<MasjidDetailScreen> {
               ],
             ),
           ),
-          if (_canAdminEdit && status != 'fresh') ...[
+          if (_canAdminEdit) ...[
             const SizedBox(width: 8),
             FilledButton.icon(
               icon: const Icon(Icons.check, size: 16),
-              label: const Text('Verify', style: TextStyle(fontSize: 12)),
+              label: Text(status == 'fresh' ? 'Re-verify' : 'Verify',
+                          style: const TextStyle(fontSize: 12)),
               style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.emerald,
+                backgroundColor: status == 'fresh' ? AppTheme.surfaceAlt : AppTheme.emerald,
+                foregroundColor: status == 'fresh' ? AppTheme.gold : AppTheme.cream,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 minimumSize: const Size(0, 0),
+                side: status == 'fresh'
+                  ? const BorderSide(color: AppTheme.gold, width: 1.2)
+                  : null,
               ),
               onPressed: _verify,
             ),

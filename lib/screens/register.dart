@@ -13,6 +13,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
   bool _busy = false;
+  bool _showPass = false;
   String? _err;
 
   Future<void> _submit() async {
@@ -45,7 +46,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: 12),
           TextField(controller: _email, decoration: const InputDecoration(labelText: 'Email (optional)',   border: OutlineInputBorder())),
           const SizedBox(height: 12),
-          TextField(controller: _pass,  obscureText: true, decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder())),
+          TextField(
+            controller: _pass,
+            obscureText: !_showPass,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility),
+                tooltip: _showPass ? 'Hide' : 'Show',
+                onPressed: () => setState(() => _showPass = !_showPass),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           if (_err != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_err!, style: const TextStyle(color: Colors.redAccent))),
           FilledButton(

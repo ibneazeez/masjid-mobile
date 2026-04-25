@@ -1,7 +1,7 @@
 name: masjid_mobile
 description: "Masjids of Nellore — masjid.eesa.co.in"
 publish_to: 'none'
-version: 0.7.3+12
+version: 0.11.0+17
 
 environment:
   sdk: '>=3.4.3 <4.0.0'
@@ -18,6 +18,9 @@ dependencies:
   google_sign_in: ^6.2.1
   url_launcher: ^6.3.0
   share_plus: ^9.0.0
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:

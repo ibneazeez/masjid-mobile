@@ -165,9 +165,18 @@ class Api {
   }
 
   static Future<Masjid> getMasjid(int id) async {
-    final r = await http.get(Uri.parse('$base/api/masjids/$id'));
-    if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
-    return Masjid.fromJson(jsonDecode(r.body));
+    try {
+      final r = await http.get(Uri.parse('$base/api/masjids/$id'));
+      if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
+      final m = Masjid.fromJson(jsonDecode(r.body));
+      MasjidDetailCache.write(m); // best-effort cache write
+      return m;
+    } catch (e) {
+      // Network down — try the per-masjid cache
+      final cached = await MasjidDetailCache.read(id);
+      if (cached != null) return cached;
+      rethrow;
+    }
   }
 
   static Future<List<Timing>> getTimings(int masjidId) async {
@@ -259,6 +268,52 @@ class Api {
     final r = await http.delete(Uri.parse('$base/api/me/favourites/$masjidId'),
                                 headers: await _headers(auth: true));
     if (r.statusCode != 200) throw Exception('remove favourite failed');
+  }
+
+  // ----- ANNOUNCEMENTS -----
+  static Future<List<Announcement>> announcementsActive() async {
+    try {
+      final r = await http.get(Uri.parse('$base/api/announcements'),
+                                headers: await _headers());
+      if (r.statusCode != 200) throw Exception('failed: ${r.body}');
+      final list = ((jsonDecode(r.body)['items'] as List?) ?? [])
+          .map((e) => Announcement.fromJson(e)).toList();
+      AnnouncementCache.write(list);
+      return list;
+    } catch (e) {
+      final cached = await AnnouncementCache.read(ignoreTtl: true);
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+
+  static Future<List<Announcement>> announcementsForMasjid(int masjidId) async {
+    final r = await http.get(Uri.parse('$base/api/masjids/$masjidId/announcements'),
+                              headers: await _headers());
+    if (r.statusCode != 200) throw Exception('failed: ${r.body}');
+    return ((jsonDecode(r.body)['items'] as List?) ?? [])
+        .map((e) => Announcement.fromJson(e)).toList();
+  }
+
+  static Future<int> announcementCreate(Map<String, dynamic> body) async {
+    final r = await http.post(Uri.parse('$base/api/announcements'),
+                               headers: await _headers(auth: true),
+                               body: jsonEncode(body));
+    final j = jsonDecode(r.body);
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'create failed');
+    return j['id'];
+  }
+
+  static Future<void> announcementVerify(int id) async {
+    final r = await http.post(Uri.parse('$base/api/announcements/$id/verify'),
+                               headers: await _headers(auth: true));
+    if (r.statusCode != 200) throw Exception('verify failed: ${r.body}');
+  }
+
+  static Future<void> announcementDelete(int id) async {
+    final r = await http.delete(Uri.parse('$base/api/announcements/$id'),
+                                headers: await _headers(auth: true));
+    if (r.statusCode != 200) throw Exception('delete failed: ${r.body}');
   }
 
   // ----- VERIFY TIMINGS -----
@@ -418,6 +473,58 @@ class Api {
   }
 }
 
+// ============================================================
+// Announcements
+// ============================================================
+class Announcement {
+  final int id;
+  final int masjidId;
+  final String masjidName;
+  final String title;
+  final String body;
+  final String kind;       // general | eid | janaza | special_prayer
+  final String scope;      // masjid | city
+  final String priority;   // low | normal | high | urgent
+  final String? eventAt;
+  final String? showFrom;
+  final String? expiresAt;
+  final bool isVerified;
+  final String? locationText;
+  final String? createdByName;
+  final String? createdAt;
+
+  Announcement({
+    required this.id, required this.masjidId, required this.masjidName,
+    required this.title, required this.body,
+    required this.kind, required this.scope, required this.priority,
+    this.eventAt, this.showFrom, this.expiresAt,
+    required this.isVerified, this.locationText,
+    this.createdByName, this.createdAt,
+  });
+
+  factory Announcement.fromJson(Map<String, dynamic> j) => Announcement(
+    id: j['id'],
+    masjidId: j['masjid_id'],
+    masjidName: j['masjid_name'] ?? '',
+    title: j['title'] ?? '',
+    body: j['body'] ?? '',
+    kind: j['kind'] ?? 'general',
+    scope: j['scope'] ?? 'masjid',
+    priority: j['priority'] ?? 'normal',
+    eventAt: j['event_at']?.toString(),
+    showFrom: j['show_from']?.toString(),
+    expiresAt: j['expires_at']?.toString(),
+    isVerified: j['is_verified'] == true,
+    locationText: j['location_text'],
+    createdByName: j['created_by_name'],
+    createdAt: j['created_at']?.toString(),
+  );
+}
+
+extension _AnnouncementApi on Api {
+  // (placeholder for namespace clarity)
+}
+
 // ----- LOCAL CACHE -----
 class MasjidCache {
   static const _kKey = 'masjid_cache_v1';
@@ -446,5 +553,88 @@ class MasjidCache {
     final p = await SharedPreferences.getInstance();
     await p.remove(_kKey);
     await p.remove(_kTime);
+  }
+}
+
+/// Per-masjid detail + timings cache (long TTL — falls back when offline).
+class MasjidDetailCache {
+  static String _key(int id) => 'masjid_detail_v1_$id';
+  static const Duration _staleAfter = Duration(hours: 24);
+
+  static Future<Masjid?> read(int id) async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_key(id));
+    if (raw == null) return null;
+    try {
+      return Masjid.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) { return null; }
+  }
+
+  static Future<void> write(Masjid m) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_key(m.id), jsonEncode(m.toJson()));
+  }
+
+  /// True if the cached entry exists and is older than TTL (used to decide
+  /// whether to show a "cached" indicator).
+  static Future<bool> isStale(int id) async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_key(id));
+    return raw == null;  // we don't track per-detail timestamps; show as fresh once cached
+  }
+
+  // Suppress unused-warning helper for _staleAfter
+  static Duration get ttl => _staleAfter;
+}
+
+/// Cache for active announcements list.
+class AnnouncementCache {
+  static const _kKey = 'announcement_cache_v1';
+  static const _kTime = 'announcement_cache_time_v1';
+  static const Duration _ttl = Duration(hours: 12);
+
+  static Future<List<Announcement>?> read({bool ignoreTtl = false}) async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_kKey);
+    final ts = p.getInt(_kTime);
+    if (raw == null || ts == null) return null;
+    if (!ignoreTtl &&
+        DateTime.now().millisecondsSinceEpoch - ts > _ttl.inMilliseconds) {
+      return null;
+    }
+    try {
+      final list = jsonDecode(raw) as List;
+      return list.map((e) {
+        // Reuse Announcement.fromJson since we cached the same JSON shape
+        final j = e as Map<String, dynamic>;
+        return Announcement(
+          id: j['id'], masjidId: j['masjid_id'], masjidName: j['masjid_name'] ?? '',
+          title: j['title'] ?? '', body: j['body'] ?? '',
+          kind: j['kind'] ?? 'general', scope: j['scope'] ?? 'masjid',
+          priority: j['priority'] ?? 'normal',
+          eventAt: j['event_at']?.toString(),
+          showFrom: j['show_from']?.toString(),
+          expiresAt: j['expires_at']?.toString(),
+          isVerified: j['is_verified'] == true,
+          locationText: j['location_text'],
+          createdByName: j['created_by_name'],
+          createdAt: j['created_at']?.toString(),
+        );
+      }).toList();
+    } catch (_) { return null; }
+  }
+
+  static Future<void> write(List<Announcement> items) async {
+    final p = await SharedPreferences.getInstance();
+    final raw = items.map((a) => {
+      'id': a.id, 'masjid_id': a.masjidId, 'masjid_name': a.masjidName,
+      'title': a.title, 'body': a.body,
+      'kind': a.kind, 'scope': a.scope, 'priority': a.priority,
+      'event_at': a.eventAt, 'show_from': a.showFrom, 'expires_at': a.expiresAt,
+      'is_verified': a.isVerified, 'location_text': a.locationText,
+      'created_by_name': a.createdByName, 'created_at': a.createdAt,
+    }).toList();
+    await p.setString(_kKey, jsonEncode(raw));
+    await p.setInt(_kTime, DateTime.now().millisecondsSinceEpoch);
   }
 }

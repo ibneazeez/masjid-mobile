@@ -12,6 +12,7 @@ class AdminSuggestionsScreen extends StatefulWidget {
 class _AdminSuggestionsScreenState extends State<AdminSuggestionsScreen> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  bool _isSuper = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -19,7 +20,22 @@ class _AdminSuggestionsScreenState extends State<AdminSuggestionsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final list = await Api.adminPendingSuggestions();
+      final me = await Api.me();
+      _isSuper = me != null && me['is_super_admin'] == true;
+      final myIds = ((me?['roles'] as List?) ?? [])
+          .where((r) => r['status'] == 'active' &&
+                         {'masjid_admin','imam','moazzan',
+                          'committee_president','committee_secretary'}.contains(r['role']))
+          .map<int>((r) => r['masjid_id'] as int).toSet();
+
+      var list = <Map<String, dynamic>>[];
+      if (_isSuper) {
+        list = await Api.adminPendingSuggestions();
+      } else if (myIds.isNotEmpty) {
+        // Non-super admins: pull all suggestions and filter to their masjids
+        list = await Api.adminPendingSuggestions();
+        list = list.where((s) => myIds.contains(s['masjid_id'])).toList();
+      }
       if (!mounted) return;
       setState(() { _items = list; _loading = false; });
     } catch (e) {

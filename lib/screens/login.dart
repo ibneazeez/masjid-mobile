@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _u = TextEditingController();
   final _p = TextEditingController();
   bool _busy = false;
+  bool _showPass = false;
   String? _err;
 
   Future<void> _submit() async {
@@ -96,7 +97,19 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 14),
             TextField(controller: _u, decoration: const InputDecoration(labelText: 'Phone or Email', border: OutlineInputBorder())),
             const SizedBox(height: 12),
-            TextField(controller: _p, obscureText: true, decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder())),
+            TextField(
+              controller: _p,
+              obscureText: !_showPass,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility),
+                  tooltip: _showPass ? 'Hide' : 'Show',
+                  onPressed: () => setState(() => _showPass = !_showPass),
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
             if (_err != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_err!, style: const TextStyle(color: Colors.redAccent))),
             FilledButton(

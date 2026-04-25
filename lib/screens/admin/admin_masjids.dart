@@ -15,6 +15,8 @@ class _AdminMasjidsScreenState extends State<AdminMasjidsScreen> {
   List<Masjid> _all = [];
   List<Masjid> _filtered = [];
   bool _loading = true;
+  bool _isSuper = false;
+  Set<int> _myMasjidIds = {};
   String _query = '';
   Timer? _debounce;
 
@@ -26,9 +28,25 @@ class _AdminMasjidsScreenState extends State<AdminMasjidsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final page = await Api.listMasjids(page: 0, size: 200, withTimings: true);
+      final results = await Future.wait([
+        Api.listMasjids(page: 0, size: 200, withTimings: true),
+        Api.me(),
+      ]);
+      final page = results[0] as MasjidPage;
+      final me = results[1] as Map<String, dynamic>?;
+      _isSuper = me != null && me['is_super_admin'] == true;
+      _myMasjidIds = ((me?['roles'] as List?) ?? [])
+          .where((r) => r['status'] == 'active' &&
+                         {'masjid_admin','imam','moazzan',
+                          'committee_president','committee_secretary'}.contains(r['role']))
+          .map<int>((r) => r['masjid_id'] as int).toSet();
+      // Filter to only the masjids the user manages (super admin sees all)
+      var visible = page.items;
+      if (!_isSuper) {
+        visible = visible.where((m) => _myMasjidIds.contains(m.id)).toList();
+      }
       setState(() {
-        _all = page.items;
+        _all = visible;
         _filtered = _applyFilter(_query);
         _loading = false;
       });
@@ -58,17 +76,18 @@ class _AdminMasjidsScreenState extends State<AdminMasjidsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Manage Masjids'),
+        title: Text(_isSuper ? 'Manage Masjids' : 'My Masjids'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: AppTheme.gold),
-            tooltip: 'Add masjid',
-            onPressed: () async {
-              final created = await Navigator.push<bool>(context,
-                MaterialPageRoute(builder: (_) => const AdminMasjidEditScreen()));
-              if (created == true) _load();
-            },
-          ),
+          if (_isSuper)
+            IconButton(
+              icon: const Icon(Icons.add, color: AppTheme.gold),
+              tooltip: 'Add masjid',
+              onPressed: () async {
+                final created = await Navigator.push<bool>(context,
+                  MaterialPageRoute(builder: (_) => const AdminMasjidEditScreen()));
+                if (created == true) _load();
+              },
+            ),
         ],
       ),
       body: Column(children: [

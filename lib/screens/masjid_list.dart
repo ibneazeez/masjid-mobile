@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets/hero_prayer_card.dart';
+import 'announcements.dart';
 import 'masjid_detail.dart';
 import 'profile.dart';
 
@@ -32,6 +33,15 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
   double? _lat, _lng;
   bool _fromCache = false;
 
+  // For proximity alert — populated from /api/auth/me
+  Set<int> _myMasjidIds = {};    // masjids where I'm a masjid_admin / imam / moazzan
+  bool _amSuperAdmin = false;
+  final Set<int> _dismissedProximityIds = {};
+
+  // Active announcements (refreshed on every load)
+  List<Announcement> _announcements = [];
+  final Set<int> _dismissedAnnouncementIds = {};
+
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
 
@@ -39,6 +49,7 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
   void initState() {
     super.initState();
     _bootstrap();
+    _loadMe();
     _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
@@ -48,6 +59,38 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         _loadMore();
       }
     });
+  }
+
+  Future<void> _loadMe() async {
+    final me = await Api.me();
+    if (!mounted || me == null) return;
+    final ids = <int>{};
+    for (final r in (me['roles'] as List? ?? [])) {
+      if (r['status'] == 'active' &&
+          {'masjid_admin', 'imam', 'moazzan'}.contains(r['role'])) {
+        ids.add(r['masjid_id']);
+      }
+    }
+    setState(() {
+      _myMasjidIds = ids;
+      _amSuperAdmin = me['is_super_admin'] == true;
+    });
+  }
+
+  /// Returns the "nearest admin masjid that still needs verification" — if any.
+  /// Used to show the big proximity banner at the top of the list.
+  Masjid? _proximityAlert() {
+    if (!_locationOn) return null;
+    // Super admin cares about every masjid. Role-holders only about theirs.
+    final candidates = _items.where((m) {
+      if (m.verificationStatus == 'fresh') return false;
+      if (m.distanceKm == null || m.distanceKm! * 1000 > 200) return false;
+      if (_dismissedProximityIds.contains(m.id)) return false;
+      return _amSuperAdmin || _myMasjidIds.contains(m.id);
+    }).toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
+    return candidates.first;
   }
 
   @override
@@ -122,6 +165,10 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         _fromCache = false;
       });
       MasjidCache.write(pageData.items);
+      // Fetch announcements separately (failure doesn't break the list)
+      Api.announcementsActive().then((list) {
+        if (mounted) setState(() => _announcements = list);
+      }).catchError((_) {});
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -341,16 +388,32 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
     return d != null && d > 50.0;
   }
 
+  /// Active announcements not yet dismissed by user
+  List<Announcement> get _visibleAnnouncements =>
+      _announcements.where((a) => !_dismissedAnnouncementIds.contains(a.id)).toList();
+
   int _heroOffset() {
     if (_items.isEmpty) return 0;
-    // Hero + search + section header (+ coverage banner on top if relevant)
-    return _isOutOfCoverage ? 4 : 3;
+    int base = 3;  // hero + search + section header
+    if (_isOutOfCoverage) base++;
+    if (_proximityAlert() != null) base++;
+    if (_visibleAnnouncements.isNotEmpty) base++;
+    return base;
   }
 
   Widget _buildHeader(int i) {
+    if (_visibleAnnouncements.isNotEmpty) {
+      if (i == 0) return _announcementsBanner();
+      i = i - 1;
+    }
+    final nearby = _proximityAlert();
+    if (nearby != null) {
+      if (i == 0) return _proximityBanner(nearby);
+      i = i - 1;
+    }
     if (_isOutOfCoverage) {
       if (i == 0) return _coverageBanner();
-      i = i - 1; // shift the rest
+      i = i - 1;
     }
     if (i == 0) {
       return Column(children: [
@@ -404,6 +467,134 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
     );
   }
 
+  Widget _announcementsBanner() {
+    final list = _visibleAnnouncements;
+    final urgent = list.firstWhere((a) => a.priority == 'urgent', orElse: () => list.first);
+    final color = urgent.kind == 'janaza'
+      ? const Color(0xFFDC2626)
+      : urgent.kind == 'eid'
+        ? const Color(0xFFD4AF37)
+        : AppTheme.emerald;
+    final extras = list.length - 1;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color, color.withOpacity(0.7)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(color: color.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AnnouncementsScreen())),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                Icon(
+                  urgent.kind == 'janaza' ? Icons.priority_high
+                  : urgent.kind == 'eid' ? Icons.celebration
+                  : Icons.campaign,
+                  color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(urgent.title,
+                        style: GoogleFonts.inter(
+                          color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                        overflow: TextOverflow.ellipsis, maxLines: 1),
+                      const SizedBox(height: 2),
+                      Text(extras > 0
+                          ? '${urgent.body.split('\n').first} · +$extras more'
+                          : urgent.body.split('\n').first,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.92), fontSize: 11.5),
+                        overflow: TextOverflow.ellipsis, maxLines: 2),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                  onPressed: () => setState(() {
+                    for (final a in list) {
+                      _dismissedAnnouncementIds.add(a.id);
+                    }
+                  }),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _proximityBanner(Masjid m) {
+    final meters = (m.distanceKm! * 1000).round();
+    final statusColor = _statusColor(m.verificationStatus);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [statusColor, statusColor.withOpacity(0.7)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(color: statusColor.withOpacity(0.4),
+                      blurRadius: 16, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => MasjidDetailScreen(masjid: m))),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: [
+                const Icon(Icons.location_on, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("You're near ${m.name}",
+                        style: GoogleFonts.inter(
+                          color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text('About ${meters}m away · '
+                           '${m.verificationStatus == "never" ? "not yet verified" : "last verified ${m.verifiedDaysAgo} days ago"}'
+                           ' — tap to update timings',
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withOpacity(0.93), fontSize: 11.5)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                  tooltip: 'Dismiss',
+                  onPressed: () => setState(() => _dismissedProximityIds.add(m.id)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _coverageBanner() {
     final km = _items.first.distanceKm!.toStringAsFixed(0);
     return Padding(
@@ -441,6 +632,11 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
   }
 
   Widget _masjidCard(Masjid m) {
+    final statusColor = _statusColor(m.verificationStatus);
+    final statusLabel = _statusLabel(m);
+    final statusIcon  = _statusIcon(m.verificationStatus);
+    final isNotFresh  = m.verificationStatus != 'fresh';
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -448,119 +644,179 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         onTap: () => Navigator.push(
           context, MaterialPageRoute(builder: (_) => MasjidDetailScreen(masjid: m))),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: m.verificationStatus == 'alarm'
-                ? const Color(0x77DC2626)
-                : m.verificationStatus == 'stale'
-                  ? const Color(0x77D4AF37)
-                  : AppTheme.line,
+              color: isNotFresh ? statusColor.withOpacity(0.6) : AppTheme.line,
+              width: isNotFresh ? 1.4 : 1,
             ),
           ),
-          child: Row(children: [
-            Stack(alignment: Alignment.bottomRight, children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppTheme.emerald, Color(0xFF053B2A)],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  ),
-                  border: Border.all(color: AppTheme.gold.withOpacity(0.55), width: 1.2),
-                ),
-                child: const Icon(Icons.mosque, color: AppTheme.goldSoft, size: 22),
-              ),
-              if (m.verificationStatus == 'fresh')
-                const _StatusDot(color: Color(0xFF22A06B), icon: Icons.check)
-              else if (m.verificationStatus == 'stale')
-                const _StatusDot(color: Color(0xFFD4AF37), icon: Icons.warning_amber_rounded)
-              else if (m.verificationStatus == 'alarm')
-                const _StatusDot(color: Color(0xFFDC2626), icon: Icons.priority_high),
-            ]),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(m.name,
-                    style: GoogleFonts.amiri(
-                      color: AppTheme.cream, fontWeight: FontWeight.bold,
-                      fontSize: 17, height: 1.1)),
-                  const SizedBox(height: 2),
-                  Text(m.area, style: GoogleFonts.inter(color: AppTheme.textMid, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    const Icon(Icons.access_time, size: 11, color: AppTheme.gold),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text('Next: ${_nextPrayerLabel(m)}',
-                        style: GoogleFonts.inter(
-                          color: AppTheme.goldSoft, fontSize: 11.5, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(99),
-                  onTap: () => _toggleFavourite(m),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      m.isFavourite ? Icons.favorite : Icons.favorite_border,
-                      color: m.isFavourite ? AppTheme.gold : AppTheme.textLo,
-                      size: 22,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (m.distanceKm != null)
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Main row
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    width: 48, height: 48,
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceAlt,
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: AppTheme.gold.withOpacity(0.35)),
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [AppTheme.emerald, Color(0xFF053B2A)],
+                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      ),
+                      border: Border.all(color: AppTheme.gold.withOpacity(0.55), width: 1.2),
                     ),
-                    child: Text(
-                      '${m.distanceKm!.toStringAsFixed(1)} km',
-                      style: GoogleFonts.inter(
-                        color: AppTheme.goldSoft, fontSize: 10.5, fontWeight: FontWeight.w700),
+                    child: const Icon(Icons.mosque, color: AppTheme.goldSoft, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(m.name,
+                          style: GoogleFonts.amiri(
+                            color: AppTheme.cream, fontWeight: FontWeight.bold,
+                            fontSize: 17, height: 1.1)),
+                        const SizedBox(height: 4),
+                        // PROMINENT status chip right under the name
+                        _bigStatusChip(statusColor, statusIcon, statusLabel),
+                        const SizedBox(height: 6),
+                        Text(m.area,
+                          style: GoogleFonts.inter(color: AppTheme.textMid, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          const Icon(Icons.access_time, size: 11, color: AppTheme.gold),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text('Next: ${_nextPrayerLabel(m)}',
+                              style: GoogleFonts.inter(
+                                color: AppTheme.goldSoft, fontSize: 11.5, fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ]),
+                      ],
                     ),
                   ),
-              ],
-            ),
-          ]),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(99),
+                        onTap: () => _toggleFavourite(m),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            m.isFavourite ? Icons.favorite : Icons.favorite_border,
+                            color: m.isFavourite ? AppTheme.gold : AppTheme.textLo,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (m.distanceKm != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceAlt,
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(color: AppTheme.gold.withOpacity(0.35)),
+                          ),
+                          child: Text(
+                            '${m.distanceKm!.toStringAsFixed(1)} km',
+                            style: GoogleFonts.inter(
+                              color: AppTheme.goldSoft, fontSize: 10.5, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                    ],
+                  ),
+                ]),
+              ),
+              // Footer stripe — ONLY for non-fresh, fully-coloured so admins can't miss it
+              if (isNotFresh) _bottomStatusStripe(statusColor, statusIcon, m),
+            ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _StatusDot extends StatelessWidget {
-  final Color color;
-  final IconData icon;
-  const _StatusDot({required this.color, required this.icon});
-  @override
-  Widget build(BuildContext context) {
+  // ---------- status helpers ----------
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'fresh': return const Color(0xFF22A06B);
+      case 'stale': return const Color(0xFFF59E0B);
+      case 'alarm': return const Color(0xFFDC2626);
+      default:      return AppTheme.textLo;        // never
+    }
+  }
+  IconData _statusIcon(String s) {
+    switch (s) {
+      case 'fresh': return Icons.verified;
+      case 'stale': return Icons.warning_amber_rounded;
+      case 'alarm': return Icons.error_outline;
+      default:      return Icons.help_outline;
+    }
+  }
+  String _statusLabel(Masjid m) {
+    switch (m.verificationStatus) {
+      case 'fresh':
+        return 'VERIFIED · ${m.verifiedDaysAgo}d ago';
+      case 'stale':
+        return 'UPDATE DUE · ${m.verifiedDaysAgo}d old';
+      case 'alarm':
+        return 'OUTDATED · ${m.verifiedDaysAgo}d old';
+      default:
+        return 'NOT VERIFIED';
+    }
+  }
+
+  Widget _bigStatusChip(Color color, IconData icon, String label) {
     return Container(
-      width: 18, height: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(color: AppTheme.surface, width: 2),
+        color: color.withOpacity(0.20),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withOpacity(0.75), width: 1.2),
       ),
-      child: Icon(icon, size: 10, color: Colors.white),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(label,
+            style: GoogleFonts.inter(
+              color: color, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _bottomStatusStripe(Color color, IconData icon, Masjid m) {
+    final label = m.verificationStatus == 'never'
+      ? 'Admin hasn\'t verified these times yet'
+      : m.verificationStatus == 'alarm'
+        ? 'Times not verified in ${m.verifiedDaysAgo}+ days — likely outdated'
+        : 'Admin check due — last verified ${m.verifiedDaysAgo} days ago';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: color.withOpacity(0.22),
+      child: Row(children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label,
+            style: GoogleFonts.inter(
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+        ),
+      ]),
     );
   }
 }
+

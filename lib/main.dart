@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'screens/masjid_list.dart';
+import 'services/notification_service.dart';
 import 'theme.dart';
 
-void main() => runApp(const MasjidApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize + reschedule notifications in the background — don't block boot
+  NotificationService().rescheduleFromSettings();
+  runApp(const MasjidApp());
+}
 
 class MasjidApp extends StatelessWidget {
   const MasjidApp({super.key});

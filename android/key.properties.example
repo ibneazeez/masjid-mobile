@@ -1,0 +1,7 @@
+STOREPASS=hS7wpEMZwgtyFvPVs1iEB4IT5SOZ
+# Copy this file to android/key.properties (NOT committed) and fill in.
+# storeFile is relative to the android/app/ directory.
+storePassword=PUT_PASSWORD_HERE
+keyPassword=PUT_PASSWORD_HERE
+keyAlias=upload
+storeFile=upload-keystore.jks

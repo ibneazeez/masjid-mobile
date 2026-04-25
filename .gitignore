@@ -31,6 +31,11 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Release signing — NEVER commit
+android/key.properties
+android/app/upload-keystore.jks
+android/.RELEASE_KEYSTORE_PASSWORD_DONOTCOMMIT.txt
+
 # Symbolication related
 app.*.symbols
 

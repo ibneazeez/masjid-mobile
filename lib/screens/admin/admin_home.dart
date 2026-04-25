@@ -15,6 +15,7 @@ class AdminHomeScreen extends StatefulWidget {
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
   Map<String, dynamic>? _stats;
+  Map<String, dynamic>? _me;
   String? _err;
 
   @override
@@ -22,18 +23,37 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
   Future<void> _load() async {
     try {
-      final s = await Api.adminStats();
-      if (mounted) setState(() { _stats = s; _err = null; });
+      final me = await Api.me();
+      if (!mounted) return;
+      setState(() => _me = me);
+      // Only super admin can call /api/admin/stats; for masjid admins, skip.
+      if (me != null && me['is_super_admin'] == true) {
+        final s = await Api.adminStats();
+        if (mounted) setState(() { _stats = s; _err = null; });
+      }
     } catch (e) {
       if (mounted) setState(() => _err = '$e');
     }
+  }
+
+  bool get _isSuper => _me != null && _me!['is_super_admin'] == true;
+
+  /// Masjid IDs this user can manage (when not super admin)
+  List<int> get _myMasjidIds {
+    if (_me == null) return [];
+    return ((_me!['roles'] as List?) ?? [])
+        .where((r) => r['status'] == 'active' &&
+                       {'masjid_admin','imam','moazzan',
+                        'committee_president','committee_secretary'}.contains(r['role']))
+        .map<int>((r) => r['masjid_id'] as int)
+        .toSet().toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(title: const Text('Admin Panel')),
+      appBar: AppBar(title: Text(_isSuper ? 'Admin Panel' : 'My Masjid')),
       body: RefreshIndicator(
         color: AppTheme.gold,
         backgroundColor: AppTheme.surface,
@@ -41,18 +61,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Verification alert banner (top of screen)
-            if (_stats != null) _verifyAlert(_stats!),
+            // Stats / verification alert (super admin only)
+            if (_isSuper && _stats != null) _verifyAlert(_stats!),
+            if (_isSuper && _stats != null) _statsGrid(_stats!),
 
-            // Stats grid
-            if (_stats != null) _statsGrid(_stats!)
-            else if (_err != null) Center(child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(_err!, style: const TextStyle(color: Colors.redAccent)),
-            ))
-            else const Center(child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(color: AppTheme.gold))),
+            // Header for non-super admins — show what they manage
+            if (!_isSuper && _myMasjidIds.isNotEmpty) _scopedHeader(),
 
             const SizedBox(height: 22),
             Text('MANAGE',
@@ -61,31 +75,42 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 fontWeight: FontWeight.w700, letterSpacing: 1.5)),
             const SizedBox(height: 10),
             _menuTile(
-              icon: Icons.mosque, title: 'Masjids',
-              subtitle: 'Add, edit, delete masjids and prayer timings',
+              icon: Icons.mosque,
+              title: _isSuper ? 'Masjids' : 'My Masjid${_myMasjidIds.length > 1 ? 's' : ''}',
+              subtitle: _isSuper
+                ? 'Add, edit, delete masjids and prayer timings'
+                : 'Edit prayer timings & details',
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AdminMasjidsScreen())),
             ),
-            const SizedBox(height: 10),
-            _menuTile(
-              icon: Icons.people_outlined, title: 'Users',
-              subtitle: 'View all registered users, search by name/email',
-              onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AdminUsersScreen())),
-            ),
-            const SizedBox(height: 10),
-            _menuTile(
-              icon: Icons.assignment_ind_outlined, title: 'Roles & Memberships',
-              subtitle: 'Assign masjid admins, approve member requests',
-              onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AdminRolesScreen())),
-            ),
+            // Users — super admin only
+            if (_isSuper) ...[
+              const SizedBox(height: 10),
+              _menuTile(
+                icon: Icons.people_outlined, title: 'Users',
+                subtitle: 'View all registered users, search by name/email',
+                onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AdminUsersScreen())),
+              ),
+            ],
+            // Roles — super admin only
+            if (_isSuper) ...[
+              const SizedBox(height: 10),
+              _menuTile(
+                icon: Icons.assignment_ind_outlined, title: 'Roles & Memberships',
+                subtitle: 'Assign masjid admins, approve member requests',
+                onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AdminRolesScreen())),
+              ),
+            ],
             const SizedBox(height: 10),
             _menuTile(
               icon: Icons.edit_calendar_outlined, title: 'Time Suggestions',
               subtitle: _stats != null && (_stats!['pending_suggestions'] ?? 0) > 0
                 ? '${_stats!['pending_suggestions']} pending review'
-                : 'Approve user-suggested prayer time changes',
+                : _isSuper
+                  ? 'Approve user-suggested prayer time changes'
+                  : 'Suggestions for masjids you manage',
               badge: _stats?['pending_suggestions'],
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AdminSuggestionsScreen())),
@@ -93,6 +118,33 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _scopedHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0E6E44), Color(0xFF053B2A)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.gold.withOpacity(0.4)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.shield_outlined, color: AppTheme.goldSoft, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Masjid Admin',
+              style: GoogleFonts.amiri(
+                color: AppTheme.cream, fontSize: 17, fontWeight: FontWeight.bold)),
+            Text('You manage ${_myMasjidIds.length} masjid${_myMasjidIds.length == 1 ? '' : 's'}',
+              style: GoogleFonts.inter(color: AppTheme.cream.withOpacity(0.85), fontSize: 12)),
+          ]),
+        ),
+      ]),
     );
   }
 
