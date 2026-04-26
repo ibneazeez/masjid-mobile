@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../api.dart';
+import '../services/widget_sync.dart';
 import '../theme.dart';
 import '../widgets/hero_prayer_card.dart';
 import 'announcements.dart';
@@ -165,6 +166,10 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         _fromCache = false;
       });
       MasjidCache.write(pageData.items);
+      // Push the nearest masjid's next prayer to the home-screen widget.
+      if (pageData.items.isNotEmpty) {
+        WidgetSync.push(masjid: pageData.items.first, now: DateTime.now());
+      }
       // Fetch announcements separately (failure doesn't break the list)
       Api.announcementsActive().then((list) {
         if (mounted) setState(() => _announcements = list);

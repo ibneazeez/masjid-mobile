@@ -6,6 +6,7 @@ import 'admin/admin_home.dart';
 import 'announcements.dart';
 import 'login.dart';
 import 'notification_settings.dart';
+import 'settings.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -204,6 +205,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: GoogleFonts.inter(
                         color: AppTheme.cream, fontSize: 14, fontWeight: FontWeight.w700)),
                     Text('Get reminded before each adhan',
+                      style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.textLo),
+              ]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // App settings — school of fiqh, nafil prayers, widget help
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.line),
+              ),
+              child: Row(children: [
+                const Icon(Icons.tune, color: AppTheme.gold),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Settings',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.cream, fontSize: 14, fontWeight: FontWeight.w700)),
+                    Text('School of fiqh, nafil prayers, home-screen widget',
                       style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
                   ]),
                 ),
