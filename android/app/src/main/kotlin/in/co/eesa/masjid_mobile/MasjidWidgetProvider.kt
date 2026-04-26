@@ -38,6 +38,7 @@ class MasjidWidgetProvider : AppWidgetProvider() {
             val masjidArea = prefs.getString(P + "widget_masjid_area", null) ?: ""
             val nextPrayer = prefs.getString(P + "widget_next_prayer", null)
             val nextTime   = prefs.getString(P + "widget_next_time", null)
+            val updatedAt  = prefs.getString(P + "widget_updated_at", null)
 
             for (id in ids) {
                 val views = RemoteViews(context.packageName, R.layout.masjid_widget)
@@ -53,6 +54,8 @@ class MasjidWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.w_prayer_time, "—")
                     views.setTextViewText(R.id.w_countdown, "Tap to load timings")
                 }
+                views.setTextViewText(R.id.w_updated,
+                    if (updatedAt != null) "Updated ${shortTime(updatedAt)}" else "")
 
                 // Tapping anywhere on the widget launches the app.
                 val launch = context.packageManager
@@ -65,6 +68,12 @@ class MasjidWidgetProvider : AppWidgetProvider() {
                 }
                 manager.updateAppWidget(id, views)
             }
+        }
+
+        /** Extract HH:mm from an ISO-8601 timestamp ("2026-04-26T22:30:01.123…"). */
+        private fun shortTime(iso: String): String {
+            val t = iso.indexOf('T')
+            return if (t > 0 && iso.length >= t + 6) iso.substring(t + 1, t + 6) else iso
         }
 
         private fun displayName(p: String): String = when (p) {

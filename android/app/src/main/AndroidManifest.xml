@@ -42,6 +42,8 @@
         <!-- Home-screen widget — shows next prayer at nearest masjid -->
         <receiver
             android:name=".MasjidWidgetProvider"
+            android:label="Masjid Timings"
+            android:icon="@mipmap/ic_launcher"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>

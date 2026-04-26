@@ -91,4 +91,13 @@
         android:textColor="#C5BFA8"
         android:textSize="11sp"
         android:text=""/>
+
+    <TextView
+        android:id="@+id/w_updated"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="#80A0AAA8"
+        android:textSize="9sp"
+        android:text=""/>
 </LinearLayout>
