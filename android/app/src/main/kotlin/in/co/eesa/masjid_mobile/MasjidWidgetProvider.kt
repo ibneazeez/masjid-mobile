@@ -4,17 +4,17 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
-import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 import java.util.Calendar
 import java.util.Locale
 
 /**
- * Home-screen widget showing the nearest masjid + next prayer + countdown.
- *
- * Data is read from "FlutterSharedPreferences" — the same store the
- * Flutter side writes to via shared_preferences. The Flutter app is the
- * source of truth; the widget never makes its own network call.
+ * Home-screen widget — nearest masjid + next prayer + all 5 daily prayers,
+ * with an "X overdue near you" badge for admins. Reads from a dedicated
+ * SharedPreferences file (MasjidWidgetPrefs) the Flutter app populates via
+ * a MethodChannel. The widget never makes its own network call — the
+ * Flutter side is the single source of truth.
  */
 class MasjidWidgetProvider : AppWidgetProvider() {
 
@@ -27,37 +27,95 @@ class MasjidWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        // shared_preferences plugin stores Strings under this XML file with a
-        // "flutter." key prefix.
-        private const val PREF_FILE = "FlutterSharedPreferences"
-        private const val P = "flutter."
+        const val PREF_FILE = "MasjidWidgetPrefs"
 
         fun updateAll(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val prefs = context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
-            val masjidName = prefs.getString(P + "widget_masjid_name", null) ?: "Masjid Timings"
-            val masjidArea = prefs.getString(P + "widget_masjid_area", null) ?: ""
-            val nextPrayer = prefs.getString(P + "widget_next_prayer", null)
-            val nextTime   = prefs.getString(P + "widget_next_time", null)
-            val updatedAt  = prefs.getString(P + "widget_updated_at", null)
+            val name        = prefs.getString("masjid_name", null) ?: "Masjid Timings"
+            val area        = prefs.getString("masjid_area", null) ?: ""
+            val distance    = prefs.getString("distance_km", null) ?: ""
+            val nextPrayer  = prefs.getString("next_prayer", null)?.takeIf { it.isNotEmpty() }
+            val nextTime    = prefs.getString("next_time",   null)?.takeIf { it.isNotEmpty() }
+            val updated     = prefs.getString("updated_at",  null)
+            val overdueCnt  = prefs.getString("overdue_count", "0")?.toIntOrNull() ?: 0
+            val overdueName = prefs.getString("overdue_name",  null)?.takeIf { it.isNotEmpty() }
 
             for (id in ids) {
                 val views = RemoteViews(context.packageName, R.layout.masjid_widget)
-                views.setTextViewText(R.id.w_masjid_name, masjidName)
-                views.setTextViewText(R.id.w_masjid_area, masjidArea)
 
+                // Header: masjid name + distance
+                views.setTextViewText(R.id.w_masjid_name, name)
+                if (area.isNotEmpty() && distance.isNotEmpty()) {
+                    views.setTextViewText(R.id.w_masjid_area, "$area · ${distance} km")
+                } else {
+                    views.setTextViewText(R.id.w_masjid_area, area.ifEmpty { distance })
+                }
+
+                // Next prayer / countdown
                 if (nextPrayer != null && nextTime != null) {
                     views.setTextViewText(R.id.w_prayer_name, displayName(nextPrayer))
                     views.setTextViewText(R.id.w_prayer_time, nextTime)
-                    views.setTextViewText(R.id.w_countdown, countdownText(nextTime))
+                    views.setTextViewText(R.id.w_countdown,   countdownText(nextTime))
                 } else {
                     views.setTextViewText(R.id.w_prayer_name, "Open app")
                     views.setTextViewText(R.id.w_prayer_time, "—")
-                    views.setTextViewText(R.id.w_countdown, "Tap to load timings")
+                    views.setTextViewText(R.id.w_countdown,   "Tap to load timings")
                 }
-                views.setTextViewText(R.id.w_updated,
-                    if (updatedAt != null) "Updated ${shortTime(updatedAt)}" else "")
 
-                // Tapping anywhere on the widget launches the app.
+                // 5-prayer grid
+                val pairs = listOf(
+                    R.id.w_p1_name to "fajr",  R.id.w_p1_time to "fajr",
+                    R.id.w_p2_name to "dhuhr", R.id.w_p2_time to "dhuhr",
+                    R.id.w_p3_name to "asr",   R.id.w_p3_time to "asr",
+                    R.id.w_p4_name to "maghrib", R.id.w_p4_time to "maghrib",
+                    R.id.w_p5_name to "isha",  R.id.w_p5_time to "isha"
+                )
+                val labels = mapOf(
+                    R.id.w_p1_name to "Fajr",    R.id.w_p2_name to "Dhuhr",
+                    R.id.w_p3_name to "Asr",     R.id.w_p4_name to "Maghrib",
+                    R.id.w_p5_name to "Isha"
+                )
+                for ((vid, label) in labels) views.setTextViewText(vid, label)
+                for ((vid, key) in pairs) {
+                    if (vid !in labels) {
+                        val raw = prefs.getString(key, "") ?: ""
+                        views.setTextViewText(vid, raw.ifEmpty { "—" })
+                    }
+                }
+                // Highlight the active prayer in the grid
+                val activeIds = mapOf(
+                    "fajr"    to (R.id.w_p1_name to R.id.w_p1_time),
+                    "dhuhr"   to (R.id.w_p2_name to R.id.w_p2_time),
+                    "asr"     to (R.id.w_p3_name to R.id.w_p3_time),
+                    "maghrib" to (R.id.w_p4_name to R.id.w_p4_time),
+                    "isha"    to (R.id.w_p5_name to R.id.w_p5_time)
+                )
+                val highlight = nextPrayer?.let { activeIds[it] }
+                for ((_, ids) in activeIds) {
+                    val (nameId, timeId) = ids
+                    val isActive = highlight == ids
+                    val color = if (isActive) 0xFFE8C863.toInt() else 0xFFA0AAA8.toInt()
+                    val timeColor = if (isActive) 0xFFFFFAEC.toInt() else 0xFFC5BFA8.toInt()
+                    views.setTextColor(nameId, color)
+                    views.setTextColor(timeId, timeColor)
+                }
+
+                // Admin overdue badge
+                if (overdueCnt > 0) {
+                    views.setViewVisibility(R.id.w_overdue, View.VISIBLE)
+                    val msg = if (overdueName != null && overdueCnt == 1)
+                        "⚠️ $overdueName overdue nearby"
+                    else
+                        "⚠️ $overdueCnt overdue masjid${if (overdueCnt == 1) "" else "s"} nearby"
+                    views.setTextViewText(R.id.w_overdue, msg)
+                } else {
+                    views.setViewVisibility(R.id.w_overdue, View.GONE)
+                }
+
+                views.setTextViewText(R.id.w_updated,
+                    if (updated != null) "Updated ${shortTime(updated)}" else "Open app to load")
+
+                // Tap → launch app
                 val launch = context.packageManager
                     .getLaunchIntentForPackage(context.packageName)
                 if (launch != null) {
@@ -70,7 +128,6 @@ class MasjidWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        /** Extract HH:mm from an ISO-8601 timestamp ("2026-04-26T22:30:01.123…"). */
         private fun shortTime(iso: String): String {
             val t = iso.indexOf('T')
             return if (t > 0 && iso.length >= t + 6) iso.substring(t + 1, t + 6) else iso
@@ -82,7 +139,6 @@ class MasjidWidgetProvider : AppWidgetProvider() {
             else -> p.replaceFirstChar { it.uppercase() }
         }
 
-        /** Compute "in 1h 23m" from "HH:mm". Best-effort — no exact-second precision. */
         private fun countdownText(hhmm: String): String {
             val parts = hhmm.split(":")
             if (parts.size < 2) return ""

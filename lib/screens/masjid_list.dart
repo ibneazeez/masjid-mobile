@@ -62,6 +62,27 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
     });
   }
 
+  /// Pick the nearest overdue masjid the current user can act on, then push
+  /// the snapshot to the native home-screen widget.
+  void _pushWidget(List<Masjid> items) {
+    Masjid? overdue;
+    final candidates = items.where((m) {
+      if (m.verificationStatus == 'fresh') return false;
+      if (m.distanceKm == null) return false;
+      // Only flag masjids the user is responsible for. Super admin sees all.
+      return _amSuperAdmin || _myMasjidIds.contains(m.id);
+    }).toList()
+      ..sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
+    if (candidates.isNotEmpty) overdue = candidates.first;
+    final overdueCount = candidates.length;
+    WidgetSync.push(
+      masjid: items.first,
+      now: DateTime.now(),
+      overdueCount: overdueCount,
+      overdueName: overdue?.name,
+    );
+  }
+
   Future<void> _loadMe() async {
     final me = await Api.me();
     if (!mounted || me == null) return;
@@ -76,6 +97,9 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
       _myMasjidIds = ids;
       _amSuperAdmin = me['is_super_admin'] == true;
     });
+    // Re-push widget data now that we know the user's admin status —
+    // overdue badge becomes accurate after this resolves.
+    if (_items.isNotEmpty) _pushWidget(_items);
   }
 
   /// Returns the "nearest admin masjid that still needs verification" — if any.
@@ -166,9 +190,9 @@ class _MasjidListScreenState extends State<MasjidListScreen> {
         _fromCache = false;
       });
       MasjidCache.write(pageData.items);
-      // Push the nearest masjid's next prayer to the home-screen widget.
+      // Push the nearest masjid + admin-overdue context to the home-screen widget.
       if (pageData.items.isNotEmpty) {
-        WidgetSync.push(masjid: pageData.items.first, now: DateTime.now());
+        _pushWidget(pageData.items);
       }
       // Fetch announcements separately (failure doesn't break the list)
       Api.announcementsActive().then((list) {

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../api.dart';
+import '../../services/prayer_calc.dart';
 import '../../theme.dart';
 
 class AdminMasjidEditScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
   bool _busy = false;
   bool _gpsLoading = false;
   bool _geocoding = false;
+  DateTime? _sunsetToday;          // resolved from PrayerCalc once lat/lng known
 
   // Timing controllers per prayer
   final Map<String, TextEditingController> _adhan = {};
@@ -61,6 +63,15 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
       _adhan[p]  = TextEditingController(text: _short(t?.adhanTime));
       _jamaat[p] = TextEditingController(text: _short(t?.jamaatTime));
     }
+    if (m?.lat != null && m?.lng != null) _loadSunset(m!.lat!, m.lng!);
+  }
+
+  /// Fetch today's sunset for this masjid's location so the Maghrib time
+  /// picker can derive offset from (picked time - sunset).
+  Future<void> _loadSunset(double lat, double lng) async {
+    final day = await PrayerCalc.dayFor(lat, lng, DateTime.now());
+    if (!mounted || day == null) return;
+    setState(() => _sunsetToday = day.sunset);
   }
 
   /// Reverse-geocode lat/lng to address+area via Nominatim. Best-effort.
@@ -170,6 +181,7 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
       // Auto-populate address from GPS + prefill timings from nearest masjid
       await _reverseGeocode(pos.latitude, pos.longitude);
       await _prefillFromNearest(pos.latitude, pos.longitude);
+      await _loadSunset(pos.latitude, pos.longitude);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -416,14 +428,18 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
                   Text('5 min gives the round-figure pattern most masjids use (05:00, 05:05…)',
                     style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
                   const SizedBox(height: 14),
-                  _label('Maghrib jamaat offset (minutes after sunset)'),
-                  TextField(
-                    controller: _maghribOffset,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(hintText: '0',
-                      helperText: 'Most masjids: 0–3 min'),
-                  ),
+                  _label('Maghrib jamaat time'),
+                  _maghribTimePicker(),
+                  const SizedBox(height: 4),
+                  Text(
+                    _sunsetToday != null
+                      ? 'Today\'s sunset: ${_hhmm(_sunsetToday!)} — '
+                        'editing the time updates the offset (currently '
+                        '${_maghribOffset.text} min after sunset).'
+                      : _lat.text.isEmpty
+                        ? 'Set GPS coordinates above to enable time picker.'
+                        : 'Loading sunset for this location…',
+                    style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
                 ]),
               ),
             ]),
@@ -465,6 +481,57 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
     child: Text(s, style: GoogleFonts.inter(
       color: AppTheme.textLo, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6)),
   );
+
+  String _hhmm(DateTime d) =>
+    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+  /// Time picker for Maghrib that derives offset = picked - sunset.
+  /// Updates BOTH _maghribOffset (for the offset column) and the Maghrib
+  /// row in PRAYER TIMINGS so the change is immediate end-to-end.
+  Widget _maghribTimePicker() {
+    final sunset = _sunsetToday;
+    final offMin = int.tryParse(_maghribOffset.text.trim()) ?? 5;
+    final displayTime = sunset == null
+        ? (_jamaat['maghrib']?.text ?? '')
+        : _hhmm(sunset.add(Duration(minutes: offMin)));
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: sunset == null ? null : () async {
+        final picked = await _pickTime(displayTime);
+        if (picked == null) return;
+        final pickedDt = DateTime(sunset.year, sunset.month, sunset.day,
+                                   picked.hour, picked.minute);
+        final off = pickedDt.difference(sunset).inMinutes;
+        setState(() {
+          _maghribOffset.text = off.toString();
+          _jamaat['maghrib']!.text = _fmt(picked);
+        });
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceAlt,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.gold.withOpacity(sunset == null ? 0.2 : 0.6)),
+        ),
+        child: Row(children: [
+          Icon(Icons.access_time, size: 18,
+            color: sunset == null ? AppTheme.textLo : AppTheme.gold),
+          const SizedBox(width: 10),
+          Text(displayTime.isEmpty ? '--:--' : displayTime,
+            style: GoogleFonts.amiri(
+              color: sunset == null ? AppTheme.textLo : AppTheme.gold,
+              fontSize: 22, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          if (sunset != null)
+            Text('= sunset + ${_maghribOffset.text} min',
+              style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
+        ]),
+      ),
+    );
+  }
 
   Widget _timeField(TextEditingController c, String hint) {
     return InkWell(
