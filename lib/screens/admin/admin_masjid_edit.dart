@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../theme.dart';
 
@@ -20,8 +22,13 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
   late final TextEditingController _capacity;
   late final TextEditingController _lat;
   late final TextEditingController _lng;
+  late final TextEditingController _fajrOffset;
+  late final TextEditingController _maghribOffset;
+  bool _autoCompute = false;
+  int _fajrRoundTo = 5;
   bool _busy = false;
   bool _gpsLoading = false;
+  bool _geocoding = false;
 
   // Timing controllers per prayer
   final Map<String, TextEditingController> _adhan = {};
@@ -45,11 +52,69 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
     _capacity = TextEditingController(text: '');
     _lat      = TextEditingController(text: m?.lat?.toString() ?? '');
     _lng      = TextEditingController(text: m?.lng?.toString() ?? '');
+    _fajrOffset    = TextEditingController(text: (m?.fajrOffsetMin ?? 22).toString());
+    _maghribOffset = TextEditingController(text: (m?.maghribOffsetMin ?? 0).toString());
+    _autoCompute   = m?.autoComputeEnabled ?? false;
+    _fajrRoundTo   = m?.fajrRoundToMin ?? 5;
     for (final p in _prayers) {
       final t = m?.timings.where((x) => x.prayer == p).firstOrNull;
       _adhan[p]  = TextEditingController(text: _short(t?.adhanTime));
       _jamaat[p] = TextEditingController(text: _short(t?.jamaatTime));
     }
+  }
+
+  /// Reverse-geocode lat/lng to address+area via Nominatim. Best-effort.
+  Future<void> _reverseGeocode(double lat, double lng) async {
+    setState(() => _geocoding = true);
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=json'
+        '&lat=$lat&lon=$lng&zoom=18&addressdetails=1');
+      final r = await http.get(url, headers: {
+        'User-Agent': 'masjid-eesa-mobile/1.0',
+      }).timeout(const Duration(seconds: 8));
+      if (r.statusCode != 200) return;
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      final addr = (j['address'] ?? {}) as Map<String, dynamic>;
+      final area = addr['suburb'] ?? addr['neighbourhood'] ?? addr['quarter']
+                 ?? addr['locality'] ?? addr['village'] ?? addr['city_district'];
+      final display = j['display_name']?.toString() ?? '';
+      if (mounted) {
+        setState(() {
+          // Only fill empty fields; never overwrite admin's text
+          if (_address.text.trim().isEmpty && display.isNotEmpty) _address.text = display;
+          if (_area.text.trim().isEmpty && area != null) _area.text = area.toString();
+        });
+      }
+    } catch (_) {/* silent */} finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
+
+  /// For a NEW masjid, fetch the nearest existing masjid and copy its
+  /// timings into the form so admin starts with reasonable defaults.
+  Future<void> _prefillFromNearest(double lat, double lng) async {
+    if (!isNew) return;
+    final allFilled = _prayers.every((p) =>
+      _adhan[p]!.text.isNotEmpty && _jamaat[p]!.text.isNotEmpty);
+    if (allFilled) return;
+    try {
+      final page = await Api.listMasjids(lat: lat, lng: lng, withTimings: true,
+                                          page: 0, size: 1);
+      if (page.items.isEmpty) return;
+      final near = page.items.first;
+      if (mounted) setState(() {
+        for (final p in _prayers) {
+          final t = near.timings.where((x) => x.prayer == p).firstOrNull;
+          if (t != null) {
+            if (_adhan[p]!.text.isEmpty)  _adhan[p]!.text  = _short(t.adhanTime);
+            if (_jamaat[p]!.text.isEmpty) _jamaat[p]!.text = _short(t.jamaatTime);
+          }
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Pre-filled timings from nearest masjid: ${near.name}')));
+      });
+    } catch (_) {/* silent */}
   }
 
   String _short(String? t) {
@@ -102,6 +167,9 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
             'Location captured: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'
             ' (accuracy: ${pos.accuracy.toStringAsFixed(0)}m)')));
       }
+      // Auto-populate address from GPS + prefill timings from nearest masjid
+      await _reverseGeocode(pos.latitude, pos.longitude);
+      await _prefillFromNearest(pos.latitude, pos.longitude);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -141,6 +209,14 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
         if (_lng.text.trim().isNotEmpty)     'lng':     double.tryParse(_lng.text.trim()),
       };
 
+      // Add adjustment fields
+      body['auto_compute_enabled'] = _autoCompute;
+      body['fajr_round_to_min']    = _fajrRoundTo;
+      final fajrOff = int.tryParse(_fajrOffset.text.trim());
+      if (fajrOff != null) body['fajr_offset_min'] = fajrOff;
+      final magOff = int.tryParse(_maghribOffset.text.trim());
+      if (magOff != null) body['maghrib_offset_min'] = magOff;
+
       int masjidId;
       if (isNew) {
         masjidId = await Api.adminCreateMasjid(body);
@@ -163,8 +239,38 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isNew ? 'Created' : 'Saved')));
+      // Ask "Verify or leave Unverified" instead of auto-stamping
+      final verify = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: Text(isNew ? 'Created — verify timings?' : 'Saved — verify timings?'),
+          content: Text(
+            'Are you confident the timings shown are correct right now?\n\n'
+            'If yes, tap "Verify" to mark them fresh. Otherwise leave as '
+            'unverified — admins can review later.',
+            style: GoogleFonts.inter(color: AppTheme.textMid),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Leave unverified'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.check, size: 16),
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.emerald),
+              onPressed: () => Navigator.pop(context, true),
+              label: const Text('Verify now'),
+            ),
+          ],
+        ),
+      );
+      if (verify == true) {
+        try { await Api.verifyMasjid(masjidId); } catch (_) {}
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(verify == true ? 'Saved & verified' : 'Saved (unverified)')));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -253,6 +359,75 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
           const SizedBox(height: 4),
           Text('Or paste manually from Google Maps',
             style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
+
+          const SizedBox(height: 24),
+          Text('TIMING ADJUSTMENTS',
+            style: GoogleFonts.inter(
+              color: AppTheme.gold, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.line),
+            ),
+            child: Column(children: [
+              SwitchListTile(
+                value: _autoCompute,
+                activeColor: AppTheme.gold,
+                title: Text('Auto-compute Fajr daily',
+                  style: GoogleFonts.inter(
+                    color: AppTheme.cream, fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  _autoCompute
+                    ? 'Fajr jamaat = astronomical Fajr + offset, rounded — refreshed nightly'
+                    : 'Fajr stays at the manual time you set below',
+                  style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
+                onChanged: (v) => setState(() => _autoCompute = v),
+              ),
+              const Divider(height: 1, color: AppTheme.line),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _label('Fajr offset (minutes after astronomical Fajr)'),
+                  TextField(
+                    controller: _fajrOffset,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(hintText: '22',
+                      helperText: 'Common: 17–25 min'),
+                  ),
+                  const SizedBox(height: 12),
+                  _label('Round Fajr jamaat to nearest'),
+                  Wrap(spacing: 8, children: [1, 5, 10, 15].map((n) {
+                    final sel = _fajrRoundTo == n;
+                    return ChoiceChip(
+                      label: Text('$n min'),
+                      selected: sel,
+                      onSelected: (_) => setState(() => _fajrRoundTo = n),
+                      selectedColor: AppTheme.gold,
+                      backgroundColor: AppTheme.surfaceAlt,
+                      labelStyle: TextStyle(
+                        color: sel ? AppTheme.bg : AppTheme.cream,
+                        fontWeight: sel ? FontWeight.w800 : FontWeight.w500),
+                    );
+                  }).toList()),
+                  const SizedBox(height: 4),
+                  Text('5 min gives the round-figure pattern most masjids use (05:00, 05:05…)',
+                    style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
+                  const SizedBox(height: 14),
+                  _label('Maghrib jamaat offset (minutes after sunset)'),
+                  TextField(
+                    controller: _maghribOffset,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(hintText: '0',
+                      helperText: 'Most masjids: 0–3 min'),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
 
           const SizedBox(height: 24),
           Text('PRAYER TIMINGS',

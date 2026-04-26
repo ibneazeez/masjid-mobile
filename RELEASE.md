@@ -37,26 +37,10 @@ flutter build apk --release
 The APK is now signed with the release keystore (because `key.properties`
 exists and `app/build.gradle` reads from it).
 
-**⚠️ Known issue (2026-04-25):** With the current AGP 7.4.2 + Kotlin 1.9.22
-combination, `--release` builds fail with `ERROR:D8: com.android.tools.r8.kotlin.H`
-during dexing. The D8 dexer bundled with AGP 7.4.2 does not understand
-the newer Kotlin metadata format. To fix, upgrade AGP and Gradle:
-
-1. Edit `android/settings.gradle`:
-   ```
-   id "com.android.application" version "8.3.0" apply false   // was 7.4.2
-   id "org.jetbrains.kotlin.android" version "1.9.22" apply false
-   ```
-2. Edit `android/gradle/wrapper/gradle-wrapper.properties`:
-   ```
-   distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
-   ```
-3. Run `cd android && ./gradlew wrapper --gradle-version 8.4`
-4. Re-run `flutter build apk --release`
-
-Until that upgrade, sideload the debug-signed APK from
-`build/app/outputs/flutter-apk/app-release.apk` (which is signed with
-the debug keystore but functionally identical for testing).
+**Resolved (2026-04-26):** AGP upgraded to 8.3.0, Gradle to 8.4, Java
+compileOptions to 17, and core library desugaring enabled in
+`android/app/build.gradle`. `flutter build apk --release` now produces a
+properly release-signed ~26 MB APK.
 
 ## Build a Play Store AAB (App Bundle)
 

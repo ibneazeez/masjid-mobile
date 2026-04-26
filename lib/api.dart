@@ -31,12 +31,18 @@ class Masjid {
   final int? verifiedDaysAgo;          // null if never verified
   final String verificationStatus;     // 'fresh' | 'stale' | 'alarm' | 'never'
   final String? verifiedAt;            // ISO-ish string from backend
+  final bool autoComputeEnabled;
+  final int? fajrOffsetMin;
+  final int? fajrRoundToMin;
+  final int? maghribOffsetMin;
   final List<Timing> timings;
   Masjid({
     required this.id, required this.name, required this.area,
     this.address, this.phone, this.lat, this.lng, this.distanceKm,
     this.isFavourite = false,
     this.verifiedDaysAgo, this.verificationStatus = 'never', this.verifiedAt,
+    this.autoComputeEnabled = false,
+    this.fajrOffsetMin, this.fajrRoundToMin, this.maghribOffsetMin,
     this.timings = const [],
   });
   factory Masjid.fromJson(Map<String, dynamic> j) => Masjid(
@@ -52,6 +58,10 @@ class Masjid {
     verifiedDaysAgo: (j['verified_days_ago'] as num?)?.toInt(),
     verificationStatus: (j['verification_status'] ?? 'never').toString(),
     verifiedAt: j['verified_at']?.toString(),
+    autoComputeEnabled: j['auto_compute_enabled'] == true,
+    fajrOffsetMin: (j['fajr_offset_min'] as num?)?.toInt(),
+    fajrRoundToMin: (j['fajr_round_to_min'] as num?)?.toInt(),
+    maghribOffsetMin: (j['maghrib_offset_min'] as num?)?.toInt(),
     timings: ((j['timings'] as List?) ?? []).map((e) => Timing.fromJson(e)).toList(),
   );
 
