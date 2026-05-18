@@ -27,6 +27,7 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
   late final TextEditingController _maghribOffset;
   bool _autoCompute = false;
   int _fajrRoundTo = 5;
+  int _asrRoundTo = 15;
   bool _busy = false;
   bool _gpsLoading = false;
   bool _geocoding = false;
@@ -54,10 +55,11 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
     _capacity = TextEditingController(text: '');
     _lat      = TextEditingController(text: m?.lat?.toString() ?? '');
     _lng      = TextEditingController(text: m?.lng?.toString() ?? '');
-    _fajrOffset    = TextEditingController(text: (m?.fajrOffsetMin ?? 22).toString());
+    _fajrOffset    = TextEditingController(text: (m?.fajrOffsetMin ?? 25).toString());
     _maghribOffset = TextEditingController(text: (m?.maghribOffsetMin ?? 0).toString());
     _autoCompute   = m?.autoComputeEnabled ?? false;
     _fajrRoundTo   = m?.fajrRoundToMin ?? 5;
+    _asrRoundTo    = m?.asrRoundToMin ?? 15;
     for (final p in _prayers) {
       final t = m?.timings.where((x) => x.prayer == p).firstOrNull;
       _adhan[p]  = TextEditingController(text: _short(t?.adhanTime));
@@ -224,6 +226,7 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
       // Add adjustment fields
       body['auto_compute_enabled'] = _autoCompute;
       body['fajr_round_to_min']    = _fajrRoundTo;
+      body['asr_round_to_min']     = _asrRoundTo;
       final fajrOff = int.tryParse(_fajrOffset.text.trim());
       if (fajrOff != null) body['fajr_offset_min'] = fajrOff;
       final magOff = int.tryParse(_maghribOffset.text.trim());
@@ -387,13 +390,13 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
               SwitchListTile(
                 value: _autoCompute,
                 activeColor: AppTheme.gold,
-                title: Text('Auto-compute Fajr daily',
+                title: Text('Auto-compute Fajr & Asr daily',
                   style: GoogleFonts.inter(
                     color: AppTheme.cream, fontWeight: FontWeight.w600)),
                 subtitle: Text(
                   _autoCompute
-                    ? 'Fajr jamaat = astronomical Fajr + offset, rounded — refreshed nightly'
-                    : 'Fajr stays at the manual time you set below',
+                    ? 'Fajr & Asr jamaat computed from AlAdhan (Hanafi), refreshed nightly'
+                    : 'Fajr & Asr stay at the manual times you set below',
                   style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11.5)),
                 onChanged: (v) => setState(() => _autoCompute = v),
               ),
@@ -406,8 +409,8 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
                     controller: _fajrOffset,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(hintText: '22',
-                      helperText: 'Common: 17–25 min'),
+                    decoration: const InputDecoration(hintText: '25',
+                      helperText: 'Common: 20–30 min'),
                   ),
                   const SizedBox(height: 12),
                   _label('Round Fajr jamaat to nearest'),
@@ -426,6 +429,24 @@ class _AdminMasjidEditScreenState extends State<AdminMasjidEditScreen> {
                   }).toList()),
                   const SizedBox(height: 4),
                   Text('5 min gives the round-figure pattern most masjids use (05:00, 05:05…)',
+                    style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
+                  const SizedBox(height: 14),
+                  _label('Round Asr jamaat UP to next block'),
+                  Wrap(spacing: 8, children: [5, 10, 15, 30].map((n) {
+                    final sel = _asrRoundTo == n;
+                    return ChoiceChip(
+                      label: Text('$n min'),
+                      selected: sel,
+                      onSelected: (_) => setState(() => _asrRoundTo = n),
+                      selectedColor: AppTheme.gold,
+                      backgroundColor: AppTheme.surfaceAlt,
+                      labelStyle: TextStyle(
+                        color: sel ? AppTheme.bg : AppTheme.cream,
+                        fontWeight: sel ? FontWeight.w800 : FontWeight.w500),
+                    );
+                  }).toList()),
+                  const SizedBox(height: 4),
+                  Text('15 min is standard — e.g. raw 17:06 → jamaat 17:15',
                     style: GoogleFonts.inter(color: AppTheme.textLo, fontSize: 11)),
                   const SizedBox(height: 14),
                   _label('Maghrib jamaat time'),

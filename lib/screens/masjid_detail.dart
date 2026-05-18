@@ -87,21 +87,19 @@ class _MasjidDetailScreenState extends State<MasjidDetailScreen> {
     'https://www.google.com/maps/dir/?api=1&destination=${m.lat},${m.lng}&travelmode=driving';
 
   Future<void> _openDirections(Masjid m) async {
-    final url = Uri.parse(_directionsUrl(m));
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    try {
+      await launchUrl(Uri.parse(_directionsUrl(m)), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open Google Maps')));
     }
   }
 
   Future<void> _openInMap(Masjid m) async {
-    final url = Uri.parse(_mapsUrl(m));
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    try {
+      await launchUrl(Uri.parse(_mapsUrl(m)), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open Google Maps')));
     }
   }

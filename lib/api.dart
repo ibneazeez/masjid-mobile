@@ -35,6 +35,7 @@ class Masjid {
   final int? fajrOffsetMin;
   final int? fajrRoundToMin;
   final int? maghribOffsetMin;
+  final int? asrRoundToMin;
   final List<Timing> timings;
   Masjid({
     required this.id, required this.name, required this.area,
@@ -43,6 +44,7 @@ class Masjid {
     this.verifiedDaysAgo, this.verificationStatus = 'never', this.verifiedAt,
     this.autoComputeEnabled = false,
     this.fajrOffsetMin, this.fajrRoundToMin, this.maghribOffsetMin,
+    this.asrRoundToMin,
     this.timings = const [],
   });
   factory Masjid.fromJson(Map<String, dynamic> j) => Masjid(
@@ -62,6 +64,7 @@ class Masjid {
     fajrOffsetMin: (j['fajr_offset_min'] as num?)?.toInt(),
     fajrRoundToMin: (j['fajr_round_to_min'] as num?)?.toInt(),
     maghribOffsetMin: (j['maghrib_offset_min'] as num?)?.toInt(),
+    asrRoundToMin: (j['asr_round_to_min'] as num?)?.toInt(),
     timings: ((j['timings'] as List?) ?? []).map((e) => Timing.fromJson(e)).toList(),
   );
 
